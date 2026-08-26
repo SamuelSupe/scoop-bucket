@@ -1,0 +1,140 @@
+name: Update Scoop manifest
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: update-scoop-bucket
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.candidate.outputs.version }}
+      changed: ${{ steps.candidate.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: candidate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p candidate
+          version="$(python3 scripts/generate-manifest.py --output candidate/git-rg.json)"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          changed=true
+          if test -f bucket/git-rg.json && cmp -s bucket/git-rg.json candidate/git-rg.json; then
+            changed=false
+          fi
+          printf 'changed=%s\n' "$changed" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: candidate-manifest
+          path: candidate/git-rg.json
+          if-no-files-found: error
+          retention-days: 1
+
+  verify:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-manifest
+          path: candidate
+      - name: Use candidate manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $candidate = Get-ChildItem -Path candidate -Filter git-rg.json -File -Recurse | Select-Object -First 1
+          if ($null -eq $candidate) { throw "candidate manifest is missing" }
+          Copy-Item -LiteralPath $candidate.FullName -Destination (Join-Path $env:GITHUB_WORKSPACE "bucket/git-rg.json") -Force
+      - name: Install Scoop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+            Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+            $installer = Join-Path $env:RUNNER_TEMP "scoop-install.ps1"
+            $installerCommit = "3bcaeb2ea53ad611fd8552eb9f735c5e2cd52f40"
+            $installerSha256 = "84242117fbd6cf80c1f1767e590a681257db47e8e0e6864dc445ce6c7fd6980e"
+            $installerUrl = "https://raw.githubusercontent.com/ScoopInstaller/Install/$installerCommit/install.ps1"
+            Invoke-WebRequest -Uri $installerUrl -OutFile $installer
+            $actualSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualSha256 -ne $installerSha256) { throw "Scoop installer checksum mismatch" }
+            $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+            $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+            $installerArgs = @()
+            if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+              # Hosted Windows jobs can be elevated; Scoop rejects that mode unless this is explicit.
+              $installerArgs += "-RunAsAdmin"
+            }
+            & $installer @installerArgs
+            if ($LASTEXITCODE -ne 0) { throw "Scoop installer failed with exit code $LASTEXITCODE" }
+          }
+          $scoopShim = Join-Path $env:USERPROFILE "scoop/shims"
+          $env:PATH = "$scoopShim;$env:PATH"
+          $scoopShim | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          scoop --version
+      - name: Install, run, and uninstall candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $manifest = Join-Path $env:GITHUB_WORKSPACE "bucket/git-rg.json"
+          scoop uninstall --purge git-rg 2>$null
+          if ($LASTEXITCODE -ne 0) { $LASTEXITCODE = 0 }
+          scoop install $manifest
+          $reportedVersion = (& git-rg --version).Trim()
+          if ($reportedVersion -ne "git-rg ${{ needs.prepare.outputs.version }}") {
+            throw "unexpected installed version: $reportedVersion"
+          }
+          scoop uninstall --purge git-rg
+
+  commit:
+    needs: [prepare, verify]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-manifest
+          path: candidate
+      - name: Commit changed manifest with the workflow token
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          candidate="$(find candidate -type f -name git-rg.json -print -quit)"
+          test -n "$candidate"
+          cp "$candidate" bucket/git-rg.json
+          if git diff --quiet -- bucket/git-rg.json && \
+             git ls-files --error-unmatch bucket/git-rg.json >/dev/null 2>&1; then
+            echo "Manifest is already current at ${VERSION}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bucket/git-rg.json
+          git commit -m "chore: update git-rg to ${VERSION}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
