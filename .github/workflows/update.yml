@@ -63,7 +63,9 @@ jobs:
           $ErrorActionPreference = "Stop"
           $candidate = Get-ChildItem -Path candidate -Filter git-rg.json -File -Recurse | Select-Object -First 1
           if ($null -eq $candidate) { throw "candidate manifest is missing" }
-          Copy-Item -LiteralPath $candidate.FullName -Destination (Join-Path $env:GITHUB_WORKSPACE "bucket/git-rg.json") -Force
+          $bucket = Join-Path $env:GITHUB_WORKSPACE "bucket"
+          New-Item -ItemType Directory -Path $bucket -Force | Out-Null
+          Copy-Item -LiteralPath $candidate.FullName -Destination (Join-Path $bucket "git-rg.json") -Force
       - name: Install Scoop
         shell: pwsh
         run: |
@@ -127,6 +129,7 @@ jobs:
           set -euo pipefail
           candidate="$(find candidate -type f -name git-rg.json -print -quit)"
           test -n "$candidate"
+          mkdir -p bucket
           cp "$candidate" bucket/git-rg.json
           if git diff --quiet -- bucket/git-rg.json && \
              git ls-files --error-unmatch bucket/git-rg.json >/dev/null 2>&1; then
