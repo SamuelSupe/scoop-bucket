@@ -81,12 +81,12 @@ jobs:
             if ($actualSha256 -ne $installerSha256) { throw "Scoop installer checksum mismatch" }
             $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
             $principal = New-Object Security.Principal.WindowsPrincipal($identity)
-            $installerArgs = @()
             if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
               # Hosted Windows jobs can be elevated; Scoop rejects that mode unless this is explicit.
-              $installerArgs += "-RunAsAdmin"
+              & $installer -RunAsAdmin
+            } else {
+              & $installer
             }
-            & $installer @installerArgs
             if ($LASTEXITCODE -ne 0) { throw "Scoop installer failed with exit code $LASTEXITCODE" }
           }
           $scoopShim = Join-Path $env:USERPROFILE "scoop/shims"
