@@ -1,6 +1,8 @@
 name: Update Scoop manifest
 
 on:
+  schedule:
+    - cron: "23 * * * *"
   workflow_dispatch:
 
 concurrency:
