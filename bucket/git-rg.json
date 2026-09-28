@@ -1,18 +1,18 @@
 {
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Remote ripgrep for GitHub and GitLab without cloning repository history",
   "homepage": "https://github.com/SamuelSupe/git-rg",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/SamuelSupe/git-rg/releases/download/v0.5.0/git-rg_v0.5.0_windows_amd64.zip",
-      "hash": "d480a5fe08677b376e2df03bc0407227a3bb66c20c02f8b18bc4a734868964e6",
-      "extract_dir": "git-rg_v0.5.0_windows_amd64"
+      "url": "https://github.com/SamuelSupe/git-rg/releases/download/v0.6.0/git-rg_v0.6.0_windows_amd64.zip",
+      "hash": "76bb867fd842303d76790a731f82af3ec8cebc4ad27c8743cb80ae68902cba13",
+      "extract_dir": "git-rg_v0.6.0_windows_amd64"
     },
     "arm64": {
-      "url": "https://github.com/SamuelSupe/git-rg/releases/download/v0.5.0/git-rg_v0.5.0_windows_arm64.zip",
-      "hash": "149bfb485347fa759a6736f5fff16d22b45d2926ab4fa505852955301acbdf58",
-      "extract_dir": "git-rg_v0.5.0_windows_arm64"
+      "url": "https://github.com/SamuelSupe/git-rg/releases/download/v0.6.0/git-rg_v0.6.0_windows_arm64.zip",
+      "hash": "612dc4ec62e1776c88529b27bedd4673b7d973b3d6af6b9d726133f12cddb69a",
+      "extract_dir": "git-rg_v0.6.0_windows_arm64"
     }
   },
   "bin": "git-rg.exe",
